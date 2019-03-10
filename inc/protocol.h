@@ -20,12 +20,14 @@
 
 #include "config.h"
 
-#ifdef CONTROL_SERIAL_PROTOCOL
 
 
 /////////////////////////////////////////////////////////////////
 // call this with received bytes; normally from main loop
-void protocol_byte( unsigned char byte );
+extern void protocol_byte( unsigned char byte );
+// call this regularly from main.c
+extern void protocol_tick();
+extern void protocol_init();
 /////////////////////////////////////////////////////////////////
 
 
@@ -87,9 +89,15 @@ extern PWM_STEER_CMD PwmSteerCmd;
 
 extern int control_type;
 #define CONTROL_TYPE_NONE 0
-#define CONTROL_TYPE_PWM 1
-#define CONTROL_TYPE_MAX 2
+#define CONTROL_TYPE_POSITION 1
+#define CONTROL_TYPE_SPEED 2
+#define CONTROL_TYPE_PWM 3
+#define CONTROL_TYPE_MAX 4
 
+
+/////////////////////////////////////
+// the rest only if we have a protocol.
+#ifdef CONTROL_SERIAL_PROTOCOL
 
 /////////////////////////////////////////////////////////////////
 // 'machine' protocol structures and definitions
@@ -107,6 +115,19 @@ typedef struct tag_PROTOCOL_MSG {
     unsigned char bytes[254];  // variable number of data bytes, with a checksum on the end
     // checksum such that sum of bytes len to CS is zero
 } PROTOCOL_MSG;
+
+typedef struct tag_PROTOCOL_MSG2 {
+    unsigned char SOM; // 0x02
+    unsigned char CI; // continuity counter
+    unsigned char len; // len is len of bytes to follow, NOT including CS
+    unsigned char bytes[255];  // variable number of data bytes, with a checksum on the end, cmd is first
+    // checksum such that sum of bytes CI to CS is zero
+} PROTOCOL_MSG2;
+
+typedef struct tag_PROTOCOL_LEN_ONWARDS {
+    unsigned char len; // len is len of ALL bytes to follow, including CS
+    unsigned char bytes[253];  // variable number of data bytes, with a checksum on the end, cmd is first
+} PROTOCOL_LEN_ONWARDS;
 
 // content of 'bytes' above, for single byte commands
 typedef struct tag_PROTOCOL_BYTES {
@@ -130,6 +151,33 @@ typedef struct tag_PROTOCOL_BYTES_WRITEVALS {
 } PROTOCOL_BYTES_WRITEVALS;
 #pragma pack(pop)
 
+
+///////////////////////////////////////////////////
+// structure used to gather variables we want to read/write.
+#define PARAM_R     1
+#define PARAM_RW    3
+///////////////////////////////////////////////////
+#define UI_NONE 0
+#define UI_SHORT 1
+
+#pragma pack(push, 1)
+typedef struct tag_PARAMSTAT {
+    unsigned char code;     // code in protocol to refer to this
+    char *description;          // if non-null, description
+    char *uistr;          // if non-null, used in ascii protocol to adjust with f<str>num<cr>
+    char ui_type;           // only UI_NONE or UI_SHORT
+    void *ptr;              // pointer to value
+    char len;               // length of value
+    char rw;                // PARAM_R or PARAM_RW
+
+    void (*preread)(void);                // function to call after write
+    void (*postread)(void);                // function to call after write
+    void (*prewrite)(void);                // function to call after write
+    void (*postwrite)(void);                // function to call after write
+} PARAMSTAT;
+#pragma pack(pop)
+
+
 /////////////////////////////////////////////////////////
 // command definitions
 // ack - no payload
@@ -151,7 +199,17 @@ typedef struct tag_PROTOCOL_BYTES_WRITEVALS {
 //
 /////////////////////////////////////////////////////////////////
 
+typedef struct tag_POSN {
+    long LeftAbsolute;
+    long RightAbsolute;
+    long LeftOffset;
+    long RightOffset;
+} POSN;
 
+typedef struct tag_POSN_INCR {
+    long Left;
+    long Right;
+} POSN_INCR;
 extern int enable_immediate;
 
 #endif
