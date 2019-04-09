@@ -41,14 +41,10 @@
 
 #define INACTIVITY_TIMEOUT 8        // minutes of not driving until poweroff. it is not very precise.
 
-// ############################### LCD DEBUG ###############################
-
-//#define DEBUG_I2C_LCD             // standard 16x2 or larger text-lcd via i2c-converter on right sensor board cable
-
 // ############################### SERIAL DEBUG ###############################
 
 //#define DEBUG_SERIAL_USART2       // left sensor board cable, disable if ADC or PPM is used!
-#define DEBUG_SERIAL_USART3         // right sensor board cable, disable if I2C (nunchuck or lcd) is used!
+#define DEBUG_SERIAL_USART3         // right sensor board cable, disable if I2C (nunchuck) is used!
 
 //#define DEBUG_SERIAL_SERVOTERM
 #define DEBUG_SERIAL_ASCII          // "1:345 2:1337 3:0 4:0 5:0 6:0 7:0 8:0\r\n"
@@ -57,7 +53,7 @@
 
 // ###### CONTROL VIA UART (serial) ######
 //#define CONTROL_SERIAL_NAIVE_USART2               // left sensor board cable, disable if ADC or PPM is used!
-//#define CONTROL_SERIAL_NAIVE_USART3               // right sensor board cable, disable if I2C (nunchuck or lcd) is used!
+//#define CONTROL_SERIAL_NAIVE_USART3               // right sensor board cable, disable if I2C (nunchuck) is used!
                                             // control via usart from eg an Arduino or raspberry
 // for Arduino, use void loop(void){ Serial.write((uint8_t *) &steer, sizeof(steer)); Serial.write((uint8_t *) &speed, sizeof(speed));delay(20); }
 //#define CONTROL_SERIAL_NAIVE_CRC                  // Add CRC32 check to control serial
@@ -213,14 +209,6 @@
     #error CONTROL_NUNCHUCK not allowed, another control Method is already defined.
   #else
     #define CONTROL_METHOD_DEFINED
-  #endif
-#endif
-
-#if defined(DEBUG_I2C_LCD)
-  #ifdef SENSOR_BOARD_CABLE_RIGHT_IN_USE
-    #error DEBUG_I2C_LCD not allowed, cable already in use.
-  #else
-    #define SENSOR_BOARD_CABLE_RIGHT_IN_USE
   #endif
 #endif
 
