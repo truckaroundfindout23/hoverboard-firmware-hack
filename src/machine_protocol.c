@@ -24,8 +24,11 @@
 * call protocol_post(PROTOCOL_LEN_ONWARDS *) to send a message
 */
 
-#include "stm32f1xx_hal.h"
-#include "defines.h"
+#ifdef DEACTIVATED
+    #include "stm32f1xx_hal.h"
+    #include "defines.h"
+#endif
+
 #include "config.h"
 
 #ifdef DEACTIVATED
@@ -33,17 +36,20 @@
 #endif
 
 #include "protocol.h"
+
 #ifdef HALL_INTERRUPTS
     #include "hallinterrupts.h"
 #endif
+
 #ifdef DEACTIVATED
     #include "softwareserial.h"
     #include "bldc.h"
 
     #include "flashcontent.h"
     #include "flashaccess.h"
+
+    #include "comms.h"
 #endif
-#include "comms.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -60,16 +66,16 @@ extern void protocol_process_message(PROTOCOL_LEN_ONWARDS *msg);
 
 
 //////////////////////////////////////////////////////////////////
-// protocol_post() uses this structure to store outgoing messages 
+// protocol_post() uses this structure to store outgoing messages
 // until they can be sent.
 // messages are stored only as len|data
 // SOM, CI, and CS are not included.
 #define MACHINE_PROTOCOL_TX_BUFFER_SIZE 1024
 typedef struct tag_MACHINE_PROTOCOL_TX_BUFFER {
     volatile unsigned char buff[MACHINE_PROTOCOL_TX_BUFFER_SIZE];
-    volatile int head; 
-    volatile int tail; 
-    
+    volatile int head;
+    volatile int tail;
+
     // count of buffer overflows
     volatile unsigned int overflow;
 
@@ -175,7 +181,7 @@ void protocol_byte( unsigned char byte ){
             } else {
                 if (s.allow_ascii){
                     //////////////////////////////////////////////////////
-                    // if the byte was NOT SOM (02), then treat it as an 
+                    // if the byte was NOT SOM (02), then treat it as an
                     // ascii protocol byte.  BOTH protocol can co-exist
                     ascii_byte( byte );
                     //////////////////////////////////////////////////////
@@ -213,7 +219,7 @@ void protocol_byte( unsigned char byte ){
                         if (s.send_state == PROTOCOL_TX_WAITING){
                             if (s.curr_msg.CI == s.curr_send_msg.CI){
                                 s.last_send_time = 0;
-                                s.send_state = PROTOCOL_TX_IDLE; 
+                                s.send_state = PROTOCOL_TX_IDLE;
                                 // if we got ack, then try to send a next message
                                 int txcount = mpTxQueued();
                                 if (txcount){
@@ -241,7 +247,7 @@ void protocol_byte( unsigned char byte ){
                                 s.last_send_time = HAL_GetTick();
                                 s.retries--;
                             } else {
-                                s.send_state = PROTOCOL_TX_IDLE; 
+                                s.send_state = PROTOCOL_TX_IDLE;
                                 // if we run out of retries, then try to send a next message
                                 int txcount = mpTxQueued();
                                 if (txcount){
@@ -386,7 +392,7 @@ void protocol_tick(){
                     s.last_send_time = HAL_GetTick();
                     s.retries--;
                 } else {
-                    s.send_state = PROTOCOL_TX_IDLE; 
+                    s.send_state = PROTOCOL_TX_IDLE;
                     // if we run out of retries, then try to send a next message
                     int txcount = mpTxQueued();
                     if (txcount){
@@ -404,7 +410,7 @@ void protocol_tick(){
             break;
         case PROTOCOL_STATE_BADCHAR:
             // 'normally, characters received BETWEEN messages which are not SOM should be treated as ASCII commands.'
-            // 'implement a mode where non SOM characters between messages cause (TIMEOUT2) to be started, 
+            // 'implement a mode where non SOM characters between messages cause (TIMEOUT2) to be started,
             // resulting in a _NACK with CI of last received message + 1_.'
             if ((s.last_tick_time - s.last_char_time) > s.timeout2){
                 protocol_send_nack(s.curr_msg.CI+1);
@@ -414,8 +420,8 @@ void protocol_tick(){
             break;
         default:
             // in a message
-            // 'In receive, if in a message (SOM has been received) and the time since the last character 
-            // exceeds (TIMEOUT2), the incomming message should be discarded, 
+            // 'In receive, if in a message (SOM has been received) and the time since the last character
+            // exceeds (TIMEOUT2), the incomming message should be discarded,
             // and a NACK should be sent with the CI of the message in progress or zero if no CI received yet'
             if ((s.last_tick_time - s.last_char_time) > s.timeout2){
                 protocol_send_nack(s.curr_msg.CI);

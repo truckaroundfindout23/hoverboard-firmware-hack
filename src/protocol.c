@@ -16,25 +16,32 @@
 * You should have received a copy of the GNU General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include "stm32f1xx_hal.h"
-#include "defines.h"
-#include "config.h"
+
 #ifdef DEACTIVATED
-#include "sensorcoms.h"
+    #include "stm32f1xx_hal.h"
+    #include "defines.h"
 #endif
+
+#include "config.h"
+
+#ifdef DEACTIVATED
+    #include "sensorcoms.h"
+#endif
+
 #include "protocol.h"
+
 #ifdef HALL_INTERRUPTS
     #include "hallinterrupts.h"
 #endif
-#ifdef DEACTIVATED
-#include "softwareserial.h"
-#include "bldc.h"
 
-#include "flashcontent.h"
-#include "flashaccess.h"
-#endif
-#include "comms.h"
 #ifdef DEACTIVATED
+    #include "softwareserial.h"
+    #include "bldc.h"
+    #include "flashcontent.h"
+    #include "flashaccess.h"
+
+    #include "comms.h"
+
     #include "deadreckoner.h"
 #endif
 
