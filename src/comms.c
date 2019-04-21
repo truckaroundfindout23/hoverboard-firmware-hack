@@ -20,7 +20,7 @@ extern UART_HandleTypeDef huart2;
 #endif
 
 
-volatile uint8_t uart_buf[100];
+char uart_buf[100];
 volatile int16_t ch_buf[8];
 
 int debug_out = 1;
