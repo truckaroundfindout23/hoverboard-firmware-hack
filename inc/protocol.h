@@ -132,7 +132,7 @@ typedef struct tag_PROTOCOL_LEN_ONWARDS {
 // content of 'bytes' above, for single byte commands
 typedef struct tag_PROTOCOL_BYTES {
     unsigned char cmd; //
-    unsigned char bytes[253];
+    unsigned char bytes[252];
 } PROTOCOL_BYTES;
 
 
