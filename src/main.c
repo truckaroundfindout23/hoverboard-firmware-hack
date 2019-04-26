@@ -238,7 +238,7 @@ int main(void) {
       if(!enable_immediate) timeout++;
       while (serial_usart_buffer_count(&usart2_it_RXbuffer) > 0) {
         SERIAL_USART_IT_BUFFERTYPE inputc = serial_usart_buffer_pop(&usart2_it_RXbuffer);
-        protocol_byte( (unsigned char) inputc );
+        protocol_byte(&sUSART2, (unsigned char) inputc );
       }
       cmd1 = PwmSteerCmd.steer;
       cmd2 = PwmSteerCmd.base_pwm;
@@ -246,7 +246,7 @@ int main(void) {
       if(!enable_immediate) timeout++;
       while (serial_usart_buffer_count(&usart3_it_RXbuffer) > 0) {
         SERIAL_USART_IT_BUFFERTYPE inputc = serial_usart_buffer_pop(&usart3_it_RXbuffer);
-        protocol_byte( (unsigned char) inputc );
+        protocol_byte(&sUSART3, (unsigned char) inputc );
       }
       cmd1 = PwmSteerCmd.steer;
       cmd2 = PwmSteerCmd.base_pwm;

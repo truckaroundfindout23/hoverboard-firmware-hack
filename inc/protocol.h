@@ -19,16 +19,9 @@
 #pragma once
 
 #include "config.h"
+#include <stdint.h>
 
 
-
-/////////////////////////////////////////////////////////////////
-// call this with received bytes; normally from main loop
-extern void protocol_byte( unsigned char byte );
-// call this regularly from main.c
-extern void protocol_tick();
-extern void protocol_init();
-/////////////////////////////////////////////////////////////////
 
 
 //// control structures used in firmware
@@ -149,6 +142,50 @@ typedef struct tag_PROTOCOL_BYTES_WRITEVALS {
     unsigned char code; // code of value to write
     unsigned char content[252]; // value to write
 } PROTOCOL_BYTES_WRITEVALS;
+
+
+#define MACHINE_PROTOCOL_TX_BUFFER_SIZE 1024
+typedef struct tag_MACHINE_PROTOCOL_TX_BUFFER {
+    volatile unsigned char buff[MACHINE_PROTOCOL_TX_BUFFER_SIZE];
+    volatile int head;
+    volatile int tail;
+
+    // count of buffer overflows
+    volatile unsigned int overflow;
+
+} MACHINE_PROTOCOL_TX_BUFFER;
+
+
+typedef struct tag_PROTOCOL_STAT {
+    char allow_ascii;
+    unsigned long last_send_time;
+    unsigned long last_tick_time;
+
+    char state;
+    unsigned long last_char_time;
+    unsigned char CS;
+    unsigned char count;
+    unsigned int nonsync;
+    PROTOCOL_MSG2 curr_msg;
+    unsigned char lastRXCI;
+
+    unsigned int unwantedacks;
+    unsigned int unwantednacks;
+
+    char send_state;
+    PROTOCOL_MSG2 curr_send_msg;
+    char retries;
+
+    int timeout1;
+    int timeout2;
+
+    int (*send_serial_data)( unsigned char *data, int len );
+    int (*send_serial_data_wait)( unsigned char *data, int len );
+
+    MACHINE_PROTOCOL_TX_BUFFER TxBuffer;
+
+} PROTOCOL_STAT;
+
 #pragma pack(pop)
 
 
@@ -211,5 +248,24 @@ typedef struct tag_POSN_INCR {
     long Right;
 } POSN_INCR;
 extern int enable_immediate;
+
+extern PROTOCOL_STAT sUSART2;
+extern PROTOCOL_STAT sUSART3;
+extern PROTOCOL_STAT sSoftwerSerial;
+
+// call this to send messages
+extern int protocol_post(PROTOCOL_STAT *s, PROTOCOL_LEN_ONWARDS *len_bytes);
+
+
+
+/////////////////////////////////////////////////////////////////
+// call this with received bytes; normally from main loop
+extern void protocol_byte( PROTOCOL_STAT *s, unsigned char byte );
+// call this regularly from main.c
+extern void protocol_tick(PROTOCOL_STAT *s);
+extern void protocol_init(PROTOCOL_STAT *s);
+/////////////////////////////////////////////////////////////////
+extern void ascii_byte(PROTOCOL_STAT *s, unsigned char byte );
+
 
 #endif

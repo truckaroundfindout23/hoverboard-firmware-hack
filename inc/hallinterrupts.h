@@ -16,8 +16,7 @@
 * You should have received a copy of the GNU General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#ifndef HALLINTERRUPTS_H
-#define HALLINTERRUPTS_H
+#pragma once
 
 #include "config.h"
 
@@ -45,6 +44,7 @@ typedef struct tag_HALL_DATA_STRUCT{
 
     float HallPosnMultiplier; // m per hall segment
 
+    long HallPosn_lastread; // posn offset set via protocol in raw value
     long HallPosn_mm; // posn in mm
     long HallPosn_mm_lastread; // posn offset set via protocol in mm
     long HallSpeed_mm_per_s; // speed in m/s
@@ -110,12 +110,9 @@ typedef struct tag_HALL_PARAMS{
     int dmacount;
 } HALL_PARAMS;
 
-extern volatile HALL_DATA_STRUCT HallData[2];
 extern TIM_HandleTypeDef h_timer_hall;
 extern volatile HALL_PARAMS local_hall_params[2];
 extern volatile long long timerwraps;
 
-
-#endif
 
 #endif

@@ -23,6 +23,7 @@
 #endif
 
 #include "config.h"
+#include "protocolFunctions.h"
 
 #ifdef DEACTIVATED
     #include "sensorcoms.h"
@@ -154,39 +155,6 @@ extern int speed; // global variable for speed. -1000 to 1000
 ///////////////////////////////////////////////
 
 
-/////////////////////////////////////////////////////////////
-// specify where to send data out of with a function pointer.
-#ifdef SOFTWARE_SERIAL
-static int (*send_serial_data)( unsigned char *data, int len ) = softwareserial_Send;
-//static int (*send_serial_data_wait)( unsigned char *data, int len ) = softwareserial_Send_Wait;
-#endif
-
-// TODO: Method to select which output is used for Protocol when both are active
-#if defined(SERIAL_USART2_IT) && !defined(READ_SENSOR)
-extern int USART2_IT_send(unsigned char *data, int len);
-
-static int (*send_serial_data)( unsigned char *data, int len ) = USART2_IT_send;
-//static int (*send_serial_data_wait)( unsigned char *data, int len ) = USART2_IT_send;
-#elif defined(SERIAL_USART3_IT) && !defined(READ_SENSOR)
-extern int USART3_IT_send(unsigned char *data, int len);
-
-static int (*send_serial_data)( unsigned char *data, int len ) = USART3_IT_send;
-//static int (*send_serial_data_wait)( unsigned char *data, int len ) = USART3_IT_send;
-#endif
-
-#ifdef DEACTIVATED
-#ifdef DEBUG_SERIAL_USART3
-// need to implement a buffering function here.
-// current DMA method needs attention...
-static int nosend( unsigned char *data, int len ){ return 0; };
-static int (*send_serial_data)( unsigned char *data, int len ) = nosend;
-//static int (*send_serial_data_wait)( unsigned char *data, int len ) = nosend;
-#endif
-#endif
-/////////////////////////////////////////////////////////////
-
-extern int protocol_post(PROTOCOL_LEN_ONWARDS *len_bytes);
-
 
 //////////////////////////////////////////////
 // variables and functions in support of parameters here
@@ -286,16 +254,12 @@ void PreRead_getrawposnupdate(){
 #endif
 }
 
-#ifdef DEACTIVATED
 void PostWrite_setrawposnupdate(){
     HallData[0].HallPosn_lastread = RawPosition.LeftAbsolute;
     HallData[1].HallPosn_lastread = RawPosition.RightAbsolute;
 }
-#endif
 
-#endif
 
-#ifdef DEACTIVATED
 POSN_INCR PositionIncr;
 
 void PostWrite_incrementposition(){
@@ -315,6 +279,9 @@ void PostWrite_incrementposition(){
     PosnData.wanted_posn_mm[1] += PositionIncr.Right;
 }
 
+#endif
+
+#ifdef DEACTIVATED
 
 void PostWrite_writeflash(){
     if (FlashContent.magic != CURRENT_MAGIC){
@@ -339,49 +306,42 @@ static int version = 1;
 
 // NOTE: Don't start uistr with 'a'
 PARAMSTAT params[] = {
-    { 0x00, NULL, NULL, UI_NONE, &version,           sizeof(version),        PARAM_R,    NULL, NULL, NULL, NULL },
+    { 0x00, NULL, NULL, UI_NONE, &version,          sizeof(version),         PARAM_R,  NULL,                     NULL, NULL,               NULL },
 #ifdef CONTROL_SENSOR
-    { 0x01, NULL, NULL, UI_NONE, &sensor_data,       sizeof(sensor_data),    PARAM_R,    NULL, NULL, NULL, NULL },
+    { 0x01, NULL, NULL, UI_NONE, &sensor_data,      sizeof(sensor_data),     PARAM_R,  NULL,                     NULL, NULL,               NULL },
 #endif
 #ifdef HALL_INTERRUPTS
-    { 0x02, NULL, NULL, UI_NONE, (void *)&HallData,          sizeof(HallData),       PARAM_R,    NULL, NULL, NULL, NULL },
+    { 0x02, NULL, NULL, UI_NONE, (void *)&HallData, sizeof(HallData),        PARAM_R,  NULL,                     NULL, NULL,               NULL },
 #endif
-    { 0x03, NULL, NULL, UI_NONE, &SpeedData,         sizeof(SpeedData),      PARAM_RW,
-                PreRead_getspeeds,      NULL,       PreWrite_setspeeds,         PostWrite_setspeeds },
+    { 0x03, NULL, NULL, UI_NONE, &SpeedData,        sizeof(SpeedData),       PARAM_RW, PreRead_getspeeds,        NULL, PreWrite_setspeeds, PostWrite_setspeeds },
 #ifdef HALL_INTERRUPTS
-    { 0x04, NULL, NULL, UI_NONE, &Position,          sizeof(Position),       PARAM_RW,
-                PreRead_getposnupdate,  NULL,       NULL,                       PostWrite_setposnupdate },
+    { 0x04, NULL, NULL, UI_NONE, &Position,         sizeof(Position),        PARAM_RW, PreRead_getposnupdate,    NULL, NULL,               PostWrite_setposnupdate },
+    { 0x05, NULL, NULL, UI_NONE, &PositionIncr,     sizeof(PositionIncr),    PARAM_RW, NULL,                     NULL, NULL,               PostWrite_incrementposition },
+    { 0x06, NULL, NULL, UI_NONE, &PosnData,         sizeof(PosnData),        PARAM_RW, NULL,                     NULL, NULL,               NULL },
+    { 0x07, NULL, NULL, UI_NONE, &RawPosition,      sizeof(RawPosition),     PARAM_RW, PreRead_getrawposnupdate, NULL, NULL,               PostWrite_setrawposnupdate },
 #endif
+    { 0x09, NULL, NULL, UI_NONE, &enable,           sizeof(enable),          PARAM_RW, NULL,                     NULL, PreWrite_enable,    NULL },
+    { 0x0A, NULL, NULL, UI_NONE, &disablepoweroff,  sizeof(disablepoweroff), PARAM_RW, NULL,                     NULL, NULL,               NULL },
+    { 0x0B, NULL, NULL, UI_NONE, &debug_out,        sizeof(debug_out),       PARAM_RW, NULL,                     NULL, NULL,               NULL },
+    { 0x20, NULL, NULL, UI_NONE, &PwmSteerCmd,      sizeof(PwmSteerCmd),     PARAM_RW, NULL,                     NULL, NULL,               NULL },
+    { 0x21, NULL, NULL, UI_NONE, &Buzzer,           sizeof(Buzzer),          PARAM_RW, PreRead_getbuzzer,        NULL, NULL,               PostWrite_setbuzzer },
+
 #ifdef DEACTIVATED
-    { 0x05, NULL, NULL, UI_NONE, &PositionIncr,      sizeof(PositionIncr),   PARAM_RW,
-                NULL,                   NULL,       NULL,                       PostWrite_incrementposition },
-#endif
-#ifdef HALL_INTERRUPTS
-    { 0x06, NULL, NULL, UI_NONE, &PosnData,          sizeof(PosnData),       PARAM_RW,    NULL, NULL, NULL, NULL },
-#endif
-#ifdef DEACTIVATED
-    { 0x07, NULL, NULL, UI_NONE, &RawPosition,       sizeof(RawPosition),    PARAM_RW,
-                PreRead_getrawposnupdate, NULL,     NULL,                       PostWrite_setrawposnupdate },
-#endif
-    { 0x09, NULL, NULL, UI_NONE, &enable,            sizeof(enable),         PARAM_RW,   NULL, NULL, PreWrite_enable, NULL },
-    { 0x0A, NULL, NULL, UI_NONE, &disablepoweroff,   sizeof(disablepoweroff),PARAM_RW,   NULL, NULL, NULL, NULL },
-    { 0x0B, NULL, NULL, UI_NONE, &debug_out,         sizeof(debug_out),      PARAM_RW,   NULL, NULL, NULL, NULL }
-#ifdef DEACTIVATED
-    { 0x0C, NULL, NULL, UI_NONE, &xytPosn,           sizeof(xytPosn),      PARAM_RW,   NULL, NULL, NULL, NULL },
+    { 0x0C, NULL, NULL, UI_NONE, &xytPosn,          sizeof(xytPosn),         PARAM_RW, NULL,                     NULL, NULL,               NULL },
 
-    { 0x80, "flash magic", "m", UI_SHORT, &FlashContent.magic, sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_writeflash },  // write this with CURRENT_MAGIC to commit to flash
+    { 0x80, "flash magic",        "m",   UI_SHORT, &FlashContent.magic,                  sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_writeflash },  // write this with CURRENT_MAGIC to commit to flash
 
-    { 0x82, "posn kp x 100", "pkp", UI_SHORT, &FlashContent.PositionKpx100, sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID },
-    { 0x81, "posn ki x 100", "pki", UI_SHORT, &FlashContent.PositionKix100, sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID }, // pid params for Position
-    { 0x83, "posn kd x 100", "pkd", UI_SHORT, &FlashContent.PositionKdx100, sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID },
-    { 0x84, "posn pwm lim", "pl", UI_SHORT, &FlashContent.PositionPWMLimit, sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID }, // e.g. 200
+    { 0x82, "posn kp x 100",      "pkp", UI_SHORT, &FlashContent.PositionKpx100,         sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID },
+    { 0x81, "posn ki x 100",      "pki", UI_SHORT, &FlashContent.PositionKix100,         sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID }, // pid params for Position
+    { 0x83, "posn kd x 100",      "pkd", UI_SHORT, &FlashContent.PositionKdx100,         sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID },
+    { 0x84, "posn pwm lim",       "pl",  UI_SHORT, &FlashContent.PositionPWMLimit,       sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID }, // e.g. 200
 
-    { 0x86, "speed kp x 100", "skp", UI_SHORT, &FlashContent.SpeedKpx100, sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID },
-    { 0x85, "speed ki x 100", "ski", UI_SHORT, &FlashContent.SpeedKix100, sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID }, // pid params for Speed
-    { 0x87, "speed kd x 100", "skd", UI_SHORT, &FlashContent.SpeedKdx100, sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID },
-    { 0x88, "speed pwm incr lim", "sl", UI_SHORT, &FlashContent.SpeedPWMIncrementLimit, sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID }, // e.g. 20
+    { 0x86, "speed kp x 100",     "skp", UI_SHORT, &FlashContent.SpeedKpx100,            sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID },
+    { 0x85, "speed ki x 100",     "ski", UI_SHORT, &FlashContent.SpeedKix100,            sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID }, // pid params for Speed
+    { 0x87, "speed kd x 100",     "skd", UI_SHORT, &FlashContent.SpeedKdx100,            sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID },
+    { 0x88, "speed pwm incr lim", "sl",  UI_SHORT, &FlashContent.SpeedPWMIncrementLimit, sizeof(short), PARAM_RW, NULL, NULL, NULL, PostWrite_PID }, // e.g. 20
 
-    { 0xA0, "hoverboard enable", "he", UI_SHORT, &FlashContent.HoverboardEnable, sizeof(short), PARAM_RW, NULL, NULL, NULL, NULL } // e.g. 20
+    { 0xA0, "hoverboard enable",  "he",  UI_SHORT, &FlashContent.HoverboardEnable,       sizeof(short), PARAM_RW, NULL, NULL, NULL, NULL } // e.g. 20
 #endif
 };
 
@@ -392,9 +352,8 @@ int paramcount = sizeof(params)/sizeof(params[0]);
 /////////////////////////////////////////////
 // a complete machineprotocl message has been
 // received without error
-void protocol_process_message(PROTOCOL_LEN_ONWARDS *msg){
+void protocol_process_message(PROTOCOL_STAT *s, PROTOCOL_LEN_ONWARDS *msg){
     PROTOCOL_BYTES *bytes = (PROTOCOL_BYTES *)msg->bytes;
-    //send_serial_data((unsigned char *) "process\n", 8);
 
     switch (bytes->cmd){
         case PROTOCOL_CMD_READVAL:{
@@ -412,7 +371,7 @@ void protocol_process_message(PROTOCOL_LEN_ONWARDS *msg){
                     }
                     msg->len = 1+1+params[i].len;  // command + code + data len only
                     // send back with 'read' command plus data like write.
-                    protocol_post(msg);
+                    protocol_post(s, msg);
                     if (params[i].postread) params[i].postread();
                     break;
                 }
@@ -421,7 +380,7 @@ void protocol_process_message(PROTOCOL_LEN_ONWARDS *msg){
             if (i == sizeof(params)/sizeof(params[0])){
                 msg->len = 1+1; // cmd + code only
                 // send back with 'read' command plus data like write.
-                protocol_post(msg);
+                protocol_post(s, msg);
             }
             break;
         }
@@ -444,7 +403,7 @@ void protocol_process_message(PROTOCOL_LEN_ONWARDS *msg){
                     msg->len = 1+1+1; // cmd+code+'1' only
                     msg->bytes[2] = 1; // say we wrote it
                     // send back with 'write' command with no data.
-                    protocol_post(msg);
+                    protocol_post(s, msg);
                     if (params[i].postwrite) params[i].postwrite();
                     break;
                 }
@@ -454,31 +413,28 @@ void protocol_process_message(PROTOCOL_LEN_ONWARDS *msg){
                 msg->len = 1+1+1; // cmd +code +'0' only
                 msg->bytes[2] = 0; // say we did not write it
                 // send back with 'write' command plus data like write.
-                protocol_post(msg);
+                protocol_post(s, msg);
             }
             break;
         }
 
         case PROTOCOL_CMD_REBOOT:
-            //protocol_send_ack(); // we no longer ack from here
-            HAL_Delay(500);
-            HAL_NVIC_SystemReset();
+            resetSystem();
             break;
 
         case PROTOCOL_CMD_TEST:
-            send_serial_data((unsigned char *) "test\n", 5);
             // just send it back!
             msg->bytes[0] = PROTOCOL_CMD_TESTRESPONSE;
             // note: original 'bytes' sent back, so leave len as is
-            protocol_post(msg);
+            protocol_post(s, msg);
             // post second immediately to test buffering
-            protocol_post(msg);
+            protocol_post(s, msg);
             break;
 
         default:
             msg->bytes[0] = PROTOCOL_CMD_UNKNOWN;
             msg->len = 1;
-            protocol_post(msg);
+            protocol_post(s, msg);
             break;
     }
 }
