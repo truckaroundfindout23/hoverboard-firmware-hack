@@ -41,7 +41,9 @@ src/control.c \
 src/main.c \
 src/bldc.c \
 src/comms.c \
-src/protocol.c \
+src/hbprotocol/protocol.c \
+src/hbprotocol/ascii_protocol.c \
+src/hbprotocol/machine_protocol.c \
 src/hallinterrupts.c \
 src/stm32f1xx_it.c \
 
@@ -92,6 +94,7 @@ AS_INCLUDES =
 # C includes
 C_INCLUDES =  \
 -Iinc \
+-Isrc/hbprotocol \
 -IDrivers/STM32F1xx_HAL_Driver/Inc \
 -IDrivers/STM32F1xx_HAL_Driver/Inc/Legacy \
 -IDrivers/CMSIS/Device/ST/STM32F1xx/Include \

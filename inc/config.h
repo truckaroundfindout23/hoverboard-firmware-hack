@@ -139,6 +139,21 @@
 // #define ADDITIONAL_CODE if (button1 && scale > 0.8) { /* field weakening at high speeds */   weakl = speedL - 600; /* weak should never exceed 400 or 450 MAX!! */   weakr = speedR - 600; } else {  weakl = 0;  weakr = 0;
 
 #endif // IGNORE_GLOBAL_CONFIG
+
+// ############################### Code Customization ###############################
+
+#define SKIP_ELECTRICAL_MEASUREMENTS   // Needed for hbprotocol module when electrical measurements not implemented here
+#define EXCLUDE_DEADRECKONER           // Needed for hbprotocol moduke when deadreckoner is not implemted
+
+
+// hbprotocol module has different way to name
+#define INCLUDE_PROTOCOL2 2
+#ifdef CONTROL_SERIAL_PROTOCOL
+  #define INCLUDE_PROTOCOL 2
+#endif
+
+
+
 // ############################### VALIDATE SETTINGS ###############################
 
 #if defined(DEBUG_SERIAL_USART2) && defined(DEBUG_SERIAL_USART3)

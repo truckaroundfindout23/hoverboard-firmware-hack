@@ -65,6 +65,11 @@ uint8_t button1, button2, button1_ADC, button2_ADC;
 int steer; // global variable for steering. -1000 to 1000
 int speed; // global variable for speed. -1000 to 1000
 
+int pwms[2] = {0, 0};
+
+int dirs[2] = {-1, 1};
+int dspeeds[2] = {0,0};
+
 extern volatile int pwml;  // global variable for pwm left. -1000 to 1000
 extern volatile int pwmr;  // global variable for pwm right. -1000 to 1000
 extern volatile int weakl; // global variable for field weakening left. -1000 to 1000
@@ -235,7 +240,7 @@ int main(void) {
 
     // TODO: Method to select which input is used for Protocol when both are active
     #if defined(SERIAL_USART2_IT) && defined(CONTROL_SERIAL_PROTOCOL)
-      if(!enable_immediate) timeout++;
+//      if(!enable_immediate) timeout++; //ASCII protocol
       while (serial_usart_buffer_count(&usart2_it_RXbuffer) > 0) {
         SERIAL_USART_IT_BUFFERTYPE inputc = serial_usart_buffer_pop(&usart2_it_RXbuffer);
         protocol_byte(&sUSART2, (unsigned char) inputc );
@@ -243,7 +248,7 @@ int main(void) {
       cmd1 = PwmSteerCmd.steer;
       cmd2 = PwmSteerCmd.base_pwm;
     #elif defined(SERIAL_USART3_IT) && defined(CONTROL_SERIAL_PROTOCOL)
-      if(!enable_immediate) timeout++;
+//      if(!enable_immediate) timeout++; //ASCII protocol
       while (serial_usart_buffer_count(&usart3_it_RXbuffer) > 0) {
         SERIAL_USART_IT_BUFFERTYPE inputc = serial_usart_buffer_pop(&usart3_it_RXbuffer);
         protocol_byte(&sUSART3, (unsigned char) inputc );
