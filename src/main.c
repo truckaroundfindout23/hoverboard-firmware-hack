@@ -94,6 +94,22 @@ extern volatile uint16_t ppm_captured_value[PPM_NUM_CHANNELS+1];
 int milli_vel_error_sum = 0;
 
 
+///////////////////////////////////////////////////////////////
+// define where to get serial data for protocol.c
+#ifdef CONTROL_SERIAL_PROTOCOL
+  #if defined(SERIAL_USART2_IT)
+    int serial_available() { return serial_usart_buffer_count(&usart2_it_RXbuffer); }
+    SERIAL_USART_IT_BUFFERTYPE serial_getrx() { return serial_usart_buffer_pop(&usart2_it_RXbuffer);}
+  #elif defined(SERIAL_USART3_IT)
+    int serial_available() { return serial_usart_buffer_count(&usart3_it_RXbuffer); }
+    SERIAL_USART_IT_BUFFERTYPE serial_getrx() { return serial_usart_buffer_pop(&usart3_it_RXbuffer);}
+  #else
+    int serial_available() { return 0; }
+    SERIAL_USART_IT_BUFFERTYPE serial_getrx() { return 0; }
+  #endif
+#endif
+
+
 void poweroff() {
   enable = 0;    // disable Motors
   if (ABS(speed) < 20) {
@@ -236,7 +252,28 @@ int main(void) {
 #endif
 
   while(1) {
+    #ifdef CONTROL_SERIAL_PROTOCOL
+      unsigned long start = HAL_GetTick();
+      while (HAL_GetTick() < start + DELAY_IN_MAIN_LOOP){
+        // note: serial_available & serial_getrx defined above depending upon serial
+        while ( serial_available() > 0 ) {
+            SERIAL_USART_IT_BUFFERTYPE inputc = serial_getrx();
+            #if defined SERIAL_USART2_IT
+              protocol_byte( &sUSART2, (unsigned char) inputc );
+            #elif defined SERIAL_USART3_IT
+              protocol_byte( &sUSART3, (unsigned char) inputc );
+            #endif
+        }
+        // very (too?) regular tick to protocol.
+        #if defined SERIAL_USART2_IT
+          protocol_tick( &sUSART2 );
+        #elif defined SERIAL_USART3_IT
+          protocol_tick( &sUSART3 );
+        #endif
+      }
+    #else // if no bytes to read, just do a delay
       HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
+    #endif
 
     // TODO: Method to select which input is used for Protocol when both are active
     #if defined(SERIAL_USART2_IT) && defined(CONTROL_SERIAL_PROTOCOL)
