@@ -26,7 +26,6 @@ The firmware you can find here allows you to use your Hoverboard Hardware (like 
 If you want an overview of what you can do with this firmware, here is a ~40min video of a talk about this project:
 https://media.ccc.de/v/gpn18-95-howto-moving-objects
 
-
 ---
 
 ## Build Instructions
@@ -101,16 +100,10 @@ a project which makes use of the protocol (ESP32) can be found at https://github
 
 ---
 
-## Compiling
-To build the firmware, just type "make". Make sure you have specified your gcc-arm-none-eabi binary (version 7 works, there is a version that does not!) location in the Makefile ("PREFIX = ...").
-
-The firmware will also build (and flash) very easily from platform.io, plaformio.ini file included.  Simply open the folder in the IDE of choice (vscode or Atom), and press the 'PlatformIO:Build' or the 'PlatformIO:Upload' button (bottom left in vscode).
-
-(Note: if you have no buttons, use Debug/Add Configuration, and select 'PlatformIO Debugger'; seems to kick it into life).
-
-
 ## Flashing
-Right to the STM32, there is a debugging header with GND, 3V3, SWDIO and SWCLK. Connect GND, SWDIO and SWCLK to your SWD programmer, like the ST-Link found on many STM devboards.
+To build the firmware, just type "make". Make sure you have specified your gcc-arm-none-eabi binary location in the Makefile ("PREFIX = ...") (version 7 works, there is a version that does not!) (if the ons in linux repos do not work, use the official version: https://developer.arm.com/open-source/gnu-toolchain/gnu-rm/downloads). Right to the STM32, there is a debugging header with GND, 3V3, SWDIO and SWCLK. Connect GND, SWDIO and SWCLK to your SWD programmer, like the ST-Link found on many STM devboards.
+
+Do not power the mainboard from the 3.3V of your programmer! This has already killed multiple mainboards.
 
 Make sure you hold the powerbutton or connect a jumper to the power button pins while flashing the firmware, as the STM might release the power latch and switches itself off during flashing. Battery > 36V have to be connected while flashing.
 
@@ -134,6 +127,10 @@ Then you can simply flash the firmware:
 ```
 st-flash --reset write build/hover.bin 0x8000000
 ```
+or
+```
+openocd -f interface/stlink-v2.cfg -f target/stm32f1x.cfg -c flash "write_image erase build/hover.bin 0x8000000"
+```
 
 ---
 ## Troubleshooting
@@ -155,8 +152,17 @@ Most robust way for input is to use the ADC and potis. It works well even on 1m 
 
 Have a look at the config.h in the Inc directory. That's where you configure to firmware to match your project.
 Currently supported: Wii Nunchuck, analog potentiometer and PPM-Sum signal from a RC remote.
+A good example of control via UART, eg. from an Arduino or raspberryPi, can be found here:
+https://github.com/p-h-a-i-l/hoverboard-firmware-hack
+
 If you need additional features like a boost button, have a look at the while(1) loop in the main.c
 
-### Projects based on
+### Additional Hardware
+
+* [breakout/interconnect boards](https://github.com/Jan--Henrik/hoverboard-breakout)  Breakout/Interconnection boards for hoverboard hacking.
+
+### Projects based on it
 * [bobbycar-optimized firmware](https://github.com/larsmm/hoverboard-firmware-hack-bbcar)  based on this one with driving modes, acceleration ramps and some other features
 * [wheel chair](https://github.com/Lahorde/steer_speed_ctrl) controlled with a joystick or using a CC2650 sensortag to control it over  bluetooth with pitch/roll.
+* [TranspOtterNG](https://github.com/Jan--Henrik/transpOtterNG) TranspOtter is an open source semi self driving transportation platform based on hoverboard hardware
+* [BiPropellant](https://github.com/bipropellant) - fork which focusses on reliable machine control, but also retains HoverBoard functionality if desired.
