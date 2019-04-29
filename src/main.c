@@ -275,24 +275,6 @@ int main(void) {
       HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
     #endif
 
-    // TODO: Method to select which input is used for Protocol when both are active
-    #if defined(SERIAL_USART2_IT) && defined(CONTROL_SERIAL_PROTOCOL)
-      if(!enable_immediate) timeout++; //ASCII protocol
-      while (serial_usart_buffer_count(&usart2_it_RXbuffer) > 0) {
-        SERIAL_USART_IT_BUFFERTYPE inputc = serial_usart_buffer_pop(&usart2_it_RXbuffer);
-        protocol_byte(&sUSART2, (unsigned char) inputc );
-      }
-      cmd1 = PwmSteerCmd.steer;
-      cmd2 = PwmSteerCmd.base_pwm;
-    #elif defined(SERIAL_USART3_IT) && defined(CONTROL_SERIAL_PROTOCOL)
-      if(!enable_immediate) timeout++; //ASCII protocol
-      while (serial_usart_buffer_count(&usart3_it_RXbuffer) > 0) {
-        SERIAL_USART_IT_BUFFERTYPE inputc = serial_usart_buffer_pop(&usart3_it_RXbuffer);
-        protocol_byte(&sUSART3, (unsigned char) inputc );
-      }
-      cmd1 = PwmSteerCmd.steer;
-      cmd2 = PwmSteerCmd.base_pwm;
-    #endif
 
     #ifdef CONTROL_NUNCHUCK
       Nunchuck_Read();
@@ -411,10 +393,23 @@ int main(void) {
     #ifdef SWITCH_WHEELS
       speedL = CLAMP(speed * SPEED_COEFFICIENT -  steer * STEER_COEFFICIENT, -1000, 1000);
       speedR = CLAMP(speed * SPEED_COEFFICIENT +  steer * STEER_COEFFICIENT, -1000, 1000);
+      #ifdef CONTROL_SERIAL_PROTOCOL
+        if(!ADCcontrolActive) {
+          speedL = PWMData.pwm[0];
+          speedR = PWMData.pwm[1];
+        }
+      #endif
     #else
       speedR = CLAMP(speed * SPEED_COEFFICIENT -  steer * STEER_COEFFICIENT, -1000, 1000);
       speedL = CLAMP(speed * SPEED_COEFFICIENT +  steer * STEER_COEFFICIENT, -1000, 1000);
+      #ifdef CONTROL_SERIAL_PROTOCOL
+        if(!ADCcontrolActive) {
+          speedR = PWMData.pwm[0];
+          speedL = PWMData.pwm[1];
+        }
+      #endif
     #endif
+
 
     #ifdef ADDITIONAL_CODE
       ADDITIONAL_CODE;
