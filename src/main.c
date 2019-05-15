@@ -25,9 +25,11 @@
 #include "config.h"
 #include "comms.h"
 #include "protocol.h"
+#include "bldc.h"
 #include "hallinterrupts.h"
 #include "crc32.h"
 #include <stdbool.h>
+#include <string.h>
 
 void SystemClock_Config(void);
 
@@ -178,6 +180,9 @@ int main(void) {
   MX_TIM_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
+
+  memset((void*)&electrical_measurements, 0, sizeof(electrical_measurements));
+  electrical_measurements.dcCurLim = DC_CUR_LIMIT;
 
 
   HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, 1);
@@ -442,6 +447,11 @@ int main(void) {
       board_temp_adc_filtered = board_temp_adc_filtered * 0.99 + (float)adc_buffer.temp * 0.01;
       board_temp_deg_c = ((float)TEMP_CAL_HIGH_DEG_C - (float)TEMP_CAL_LOW_DEG_C) / ((float)TEMP_CAL_HIGH_ADC - (float)TEMP_CAL_LOW_ADC) * (board_temp_adc_filtered - (float)TEMP_CAL_LOW_ADC) + (float)TEMP_CAL_LOW_DEG_C;
 
+      electrical_measurements.board_temp_raw = adc_buffer.temp;
+      electrical_measurements.board_temp_filtered = board_temp_adc_filtered;
+      electrical_measurements.board_temp_deg_c = board_temp_deg_c;
+      electrical_measurements.charging = !(CHARGER_PORT->IDR & CHARGER_PIN);
+
       // ####### DEBUG SERIAL OUT #######
       #ifdef CONTROL_ADC
         setScopeChannel(0, (int)adc_buffer.l_tx2);  // 1: ADC1
@@ -469,6 +479,12 @@ int main(void) {
         }
         poweroff();
       }
+
+    // if we plug in the charger, keep us alive
+    // also if we have deliberately turned off poweroff over serial
+    if (electrical_measurements.charging || disablepoweroff){
+      inactivity_timeout_counter = 0;
+    }
 
 
     // ####### BEEP AND EMERGENCY POWEROFF #######

@@ -142,7 +142,6 @@
 
 // ############################### Code Customization ###############################
 
-#define SKIP_ELECTRICAL_MEASUREMENTS   // Needed for hbprotocol module when electrical measurements not implemented here
 #define EXCLUDE_DEADRECKONER           // Needed for hbprotocol moduke when deadreckoner is not implemted
 
 
