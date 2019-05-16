@@ -42,10 +42,13 @@ src/main.c \
 src/bldc.c \
 src/comms.c \
 src/hbprotocol/protocol.c \
-src/hbprotocol/ascii_protocol.c \
-src/hbprotocol/machine_protocol.c \
 src/hallinterrupts.c \
+src/flasharea.c \
+src/flashaccess.c \
 src/stm32f1xx_it.c \
+src/pid.c \
+src/hbprotocol/machine_protocol.c \
+src/hbprotocol/ascii_protocol.c
 
 # ASM sources
 ASM_SOURCES =  \

@@ -24,9 +24,12 @@
 #include "setup.h"
 #include "config.h"
 #include "comms.h"
+#include "flashaccess.h"
 #include "protocol.h"
 #include "bldc.h"
 #include "hallinterrupts.h"
+#include "pid.h"
+#include "flashcontent.h"
 #include "crc32.h"
 #include <stdbool.h>
 #include <string.h>
@@ -153,6 +156,92 @@ bool checkCRC(Serialcommand* command) {
 }
 #endif
 
+/////////////////////////////////////////
+// variables stored in flash
+// from flashcontent.h
+FLASH_CONTENT FlashContent;
+const FLASH_CONTENT FlashDefaults = FLASH_DEFAULTS;
+
+
+typedef struct tag_PID_FLOATS{
+    float in;
+    float set;
+    float out;
+
+    int count; // - used in averaging speed between pid loops
+} PID_FLOATS;
+
+// setup pid control for left and right speed.
+pid_controller  PositionPid[2];
+// temp floats
+PID_FLOATS PositionPidFloats[2] = {
+  { 0, 0, 0,   0 },
+  { 0, 0, 0,   0 }
+};
+pid_controller  SpeedPid[2];
+// temp floats
+PID_FLOATS SpeedPidFloats[2] = {
+  { 0, 0, 0,   0 },
+  { 0, 0, 0,   0 }
+};
+
+void init_PID_control(){
+  memset(&PositionPid, 0, sizeof(PositionPid));
+  memset(&SpeedPid, 0, sizeof(SpeedPid));
+  for (int i = 0; i < 2; i++){
+    PositionPidFloats[i].in = 0;
+    PositionPidFloats[i].set = 0;
+    pid_create(&PositionPid[i], &PositionPidFloats[i].in, &PositionPidFloats[i].out, &PositionPidFloats[i].set,
+      (float)FlashContent.PositionKpx100/100.0,
+      (float)FlashContent.PositionKix100/100.0,
+      (float)FlashContent.PositionKdx100/100.0);
+
+    // maximum pwm outputs for positional control; limits speed
+  	pid_limits(&PositionPid[i], -FlashContent.PositionPWMLimit, FlashContent.PositionPWMLimit);
+  	pid_auto(&PositionPid[i]);
+    SpeedPidFloats[i].in = 0;
+    SpeedPidFloats[i].set = 0;
+    pid_create(&SpeedPid[i], &SpeedPidFloats[i].in, &SpeedPidFloats[i].out, &SpeedPidFloats[i].set,
+      (float)FlashContent.SpeedKpx100/100.0,
+      (float)FlashContent.SpeedKix100/100.0,
+      (float)FlashContent.SpeedKdx100/100.0);
+
+    // maximum increment to pwm outputs for speed control; limits changes in speed (accelleration)
+  	pid_limits(&SpeedPid[i], -FlashContent.SpeedPWMIncrementLimit, FlashContent.SpeedPWMIncrementLimit);
+  	pid_auto(&SpeedPid[i]);
+  }
+}
+
+void change_PID_constants(){
+  for (int i = 0; i < 2; i++){
+    pid_tune(&PositionPid[i],
+      (float)FlashContent.PositionKpx100/100.0,
+      (float)FlashContent.PositionKix100/100.0,
+      (float)FlashContent.PositionKdx100/100.0);
+  	pid_limits(&PositionPid[i], -FlashContent.PositionPWMLimit, FlashContent.PositionPWMLimit);
+
+    pid_tune(&SpeedPid[i],
+      (float)FlashContent.SpeedKpx100/100.0,
+      (float)FlashContent.SpeedKix100/100.0,
+      (float)FlashContent.SpeedKdx100/100.0);
+  	pid_limits(&SpeedPid[i], -FlashContent.SpeedPWMIncrementLimit, FlashContent.SpeedPWMIncrementLimit);
+  }
+}
+
+#ifdef FLASH_STORAGE
+void init_flash_content(){
+  FLASH_CONTENT FlashRead;
+  int len = readFlash( (unsigned char *)&FlashRead, sizeof(FlashRead) );
+
+  if ((len != sizeof(FlashRead)) || (FlashRead.magic != CURRENT_MAGIC)){
+    memcpy(&FlashRead, &FlashDefaults, sizeof(FlashRead));
+    writeFlash( (unsigned char *)&FlashRead, sizeof(FlashRead) );
+    consoleLog("Flash initiailised\r\n");
+  }
+  memcpy(&FlashContent, &FlashRead, sizeof(FlashContent));
+}
+#endif
+
 int main(void) {
   HAL_Init();
   __HAL_RCC_AFIO_CLK_ENABLE();
@@ -196,6 +285,19 @@ int main(void) {
   #ifdef SERIAL_USART3_IT
   USART3_IT_init();
   #endif
+
+
+#ifdef FLASH_STORAGE
+  init_flash_content();
+
+  init_PID_control();
+#endif
+
+  if (0 == FlashContent.MaxCurrLim) {
+    FlashContent.MaxCurrLim = DC_CUR_LIMIT*100;
+  }
+  electrical_measurements.dcCurLim = MIN(DC_CUR_LIMIT, FlashContent.MaxCurrLim / 100);
+
 
   for (int i = 8; i >= 0; i--) {
     buzzerFreq = i;
@@ -255,6 +357,8 @@ int main(void) {
   MX_TIM3_Softwatchdog_Init(); // Start the WAtchdog
   SoftWatchdogActive= true;
 #endif
+
+  int last_control_type = CONTROL_TYPE_NONE;
 
   while(1) {
     #ifdef CONTROL_SERIAL_PROTOCOL
@@ -381,6 +485,90 @@ int main(void) {
     #endif
 
 
+#if defined(INCLUDE_PROTOCOL)
+
+    if ((last_control_type != control_type) || (!enable)){
+      // nasty things happen if it's not re-initialised
+      init_PID_control();
+      last_control_type = control_type;
+    }
+
+    switch (control_type){
+      case CONTROL_TYPE_POSITION:
+        for (int i = 0; i < 2; i++){
+          if (pid_need_compute(&PositionPid[i])) {
+            // Read process feedback
+  #ifdef HALL_INTERRUPTS
+            PositionPidFloats[i].set = PosnData.wanted_posn_mm[i];
+            PositionPidFloats[i].in = HallData[i].HallPosn_mm;
+  #endif
+            // Compute new PID output value
+            pid_compute(&PositionPid[i]);
+            //Change actuator value
+            int pwm = PositionPidFloats[i].out;
+            pwms[i] = pwm;
+            #ifdef LOG_PWM
+              if (i == 0){
+                sprintf(tmp, "%d:%d\r\n", i, pwm);
+                consoleLog(tmp);
+              }
+            #endif
+          }
+        }
+        break;
+      case CONTROL_TYPE_SPEED:
+        for (int i = 0; i < 2; i++){
+          // average speed over all the loops until pid_need_compute() returns !=0
+  #ifdef HALL_INTERRUPTS
+          SpeedPidFloats[i].in += HallData[i].HallSpeed_mm_per_s;
+  #endif
+          SpeedPidFloats[i].count++;
+          if (!enable){ // don't want anything building up
+            SpeedPidFloats[i].in = 0;
+            SpeedPidFloats[i].count = 1;
+          }
+          if (pid_need_compute(&SpeedPid[i])) {
+            // Read process feedback
+            int belowmin = 0;
+            // won't work below about 45
+            if (ABS(SpeedData.wanted_speed_mm_per_sec[i]) < SpeedData.speed_minimum_speed){
+              SpeedPidFloats[i].set = 0;
+              belowmin = 1;
+            } else {
+              SpeedPidFloats[i].set = SpeedData.wanted_speed_mm_per_sec[i];
+            }
+            SpeedPidFloats[i].in = SpeedPidFloats[i].in/(float)SpeedPidFloats[i].count;
+            SpeedPidFloats[i].count = 0;
+            // Compute new PID output value
+            pid_compute(&SpeedPid[i]);
+            //Change actuator value
+            int pwm = SpeedPidFloats[i].out;
+            if (belowmin){
+              pwms[i] = 0;
+            } else {
+              pwms[i] =
+                CLAMP(pwms[i] + pwm, -SpeedData.speed_max_power, SpeedData.speed_max_power);
+            }
+            #ifdef LOG_PWM
+            if (i == 0){
+              sprintf(tmp, "%d:%d(%d) S:%d H:%d\r\n", i, pwms[i], pwm, (int)SpeedPidFloats[i].set, (int)SpeedPidFloats[i].in);
+              consoleLog(tmp);
+            }
+            #endif
+          }
+        }
+        break;
+
+      case CONTROL_TYPE_PWM:
+        for (int i = 0; i < 2; i++){
+          pwms[i] = PWMData.pwm[i];
+        }
+        break;
+    }
+#endif
+
+
+
     #if defined CONTROL_ADC
       if(ADCcontrolActive) {
         cmd1 = cmd1_ADC;
@@ -400,8 +588,8 @@ int main(void) {
       speedR = CLAMP(speed * SPEED_COEFFICIENT +  steer * STEER_COEFFICIENT, -1000, 1000);
       #ifdef CONTROL_SERIAL_PROTOCOL
         if(!ADCcontrolActive) {
-          speedL = PWMData.pwm[0];
-          speedR = PWMData.pwm[1];
+          speedL = pwms[0];
+          speedR = pwms[1];
         }
       #endif
     #else
@@ -409,8 +597,8 @@ int main(void) {
       speedL = CLAMP(speed * SPEED_COEFFICIENT +  steer * STEER_COEFFICIENT, -1000, 1000);
       #ifdef CONTROL_SERIAL_PROTOCOL
         if(!ADCcontrolActive) {
-          speedR = PWMData.pwm[0];
-          speedL = PWMData.pwm[1];
+          speedR = pwms[0];
+          speedL = pwms[1];
         }
       #endif
     #endif
