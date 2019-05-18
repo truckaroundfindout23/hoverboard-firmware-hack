@@ -59,4 +59,6 @@ extern const FLASH_CONTENT FlashDefaults;
 #define FLASH_DEFAULT_HOVERBOARD_ENABLE 0
 #endif
 
-#define FLASH_DEFAULTS { CURRENT_MAGIC,    50, 50, 0, 200,    20, 10, 0, 10,    1500,   FLASH_DEFAULT_HOVERBOARD_ENABLE }
+//#define FLASH_DEFAULTS { CURRENT_MAGIC,    50, 50, 0, 200,    20, 10, 0, 10,    1500,   FLASH_DEFAULT_HOVERBOARD_ENABLE }
+#define FLASH_DEFAULTS { CURRENT_MAGIC, 300, 50, 0, 400,    20, 10, 0, 10,    200,   FLASH_DEFAULT_HOVERBOARD_ENABLE } // https://github.com/btsimonh/hoverboard-firmware-hack/pull/16
+//#define FLASH_DEFAULTS { CURRENT_MAGIC, 500, 50, 15, 150,    20, 10, 0, 10,    200,   FLASH_DEFAULT_HOVERBOARD_ENABLE } // https://github.com/btsimonh/hoverboard-firmware-hack/pull/16
