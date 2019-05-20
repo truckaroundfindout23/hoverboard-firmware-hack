@@ -99,22 +99,6 @@ extern volatile uint16_t ppm_captured_value[PPM_NUM_CHANNELS+1];
 int milli_vel_error_sum = 0;
 
 
-///////////////////////////////////////////////////////////////
-// define where to get serial data for protocol.c
-#ifdef CONTROL_SERIAL_PROTOCOL
-  #if defined(SERIAL_USART2_IT)
-    int serial_available() { return serial_usart_buffer_count(&usart2_it_RXbuffer); }
-    SERIAL_USART_IT_BUFFERTYPE serial_getrx() { return serial_usart_buffer_pop(&usart2_it_RXbuffer);}
-  #elif defined(SERIAL_USART3_IT)
-    int serial_available() { return serial_usart_buffer_count(&usart3_it_RXbuffer); }
-    SERIAL_USART_IT_BUFFERTYPE serial_getrx() { return serial_usart_buffer_pop(&usart3_it_RXbuffer);}
-  #else
-    int serial_available() { return 0; }
-    SERIAL_USART_IT_BUFFERTYPE serial_getrx() { return 0; }
-  #endif
-#endif
-
-
 void poweroff() {
   enable = 0;    // disable Motors
   if (ABS(speed) < 20) {
@@ -341,6 +325,46 @@ int main(void) {
   #endif
 
 
+
+#ifdef INCLUDE_PROTOCOL
+
+    #if defined(SERIAL_USART2_IT) && !defined(READ_SENSOR)
+
+      extern int USART2_IT_send(unsigned char *data, int len);
+
+      PROTOCOL_STAT sUSART2;
+
+      if(protocol_init(&sUSART2) != 0) consoleLog("Protocol Init failed\r\n");
+
+      sUSART2.send_serial_data=USART2_IT_send;
+      sUSART2.send_serial_data_wait=USART2_IT_send;
+      sUSART2.timeout1 = 500;
+      sUSART2.timeout2 = 100;
+      sUSART2.allow_ascii = 1;
+
+    #endif
+
+    #if defined(SERIAL_USART3_IT) && !defined(READ_SENSOR)
+
+      extern int USART3_IT_send(unsigned char *data, int len);
+
+      PROTOCOL_STAT sUSART3;
+
+      if(protocol_init(&sUSART3) != 0) consoleLog("Protocol Init failed\r\n");
+
+      sUSART3.send_serial_data=USART3_IT_send;
+      sUSART3.send_serial_data_wait=USART3_IT_send;
+      sUSART3.timeout1 = 500;
+      sUSART3.timeout2 = 100;
+      sUSART3.allow_ascii = 1;
+
+    #endif
+
+    int last_control_type = CONTROL_TYPE_NONE;
+
+
+  #endif
+
   float board_temp_adc_filtered = (float)adc_buffer.temp;
   float board_temp_deg_c;
 
@@ -358,30 +382,36 @@ int main(void) {
   SoftWatchdogActive= true;
 #endif
 
-  int last_control_type = CONTROL_TYPE_NONE;
+
 
   while(1) {
-    #ifdef CONTROL_SERIAL_PROTOCOL
+
+    #if (INCLUDE_PROTOCOL == INCLUDE_PROTOCOL2)
+
       unsigned long start = HAL_GetTick();
+
       while (HAL_GetTick() < start + DELAY_IN_MAIN_LOOP){
-        // note: serial_available & serial_getrx defined above depending upon serial
-        while ( serial_available() > 0 ) {
-            SERIAL_USART_IT_BUFFERTYPE inputc = serial_getrx();
-            #if defined SERIAL_USART2_IT
-              protocol_byte( &sUSART2, (unsigned char) inputc );
-            #elif defined SERIAL_USART3_IT
-              protocol_byte( &sUSART3, (unsigned char) inputc );
-            #endif
-        }
-        // very (too?) regular tick to protocol.
-        #if defined SERIAL_USART2_IT
+
+        #if defined(SERIAL_USART2_IT) && !defined(READ_SENSOR)
+          while ( serial_usart_buffer_count(&usart2_it_RXbuffer) > 0 ) {
+            protocol_byte( &sUSART2, (unsigned char) serial_usart_buffer_pop(&usart2_it_RXbuffer) );
+          }
           protocol_tick( &sUSART2 );
-        #elif defined SERIAL_USART3_IT
+        #endif
+
+        #if defined(SERIAL_USART3_IT) && !defined(READ_SENSOR)
+          while ( serial_usart_buffer_count(&usart3_it_RXbuffer) > 0 ) {
+            protocol_byte( &sUSART3, (unsigned char) serial_usart_buffer_pop(&usart3_it_RXbuffer) );
+          }
           protocol_tick( &sUSART3 );
         #endif
+
       }
+
     #else // if no bytes to read, just do a delay
+
       HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
+
     #endif
 
 
