@@ -385,6 +385,7 @@ int main(void) {
 
 
   while(1) {
+    timeout++;
 
     #if (INCLUDE_PROTOCOL == INCLUDE_PROTOCOL2)
 
