@@ -11,20 +11,27 @@ extern UART_HandleTypeDef huart3;
 
 #ifdef DEBUG_SERIAL_USART3
 #define UART_DMA_CHANNEL DMA1_Channel2
-extern UART_HandleTypeDef huart3;
 #endif
 
 #ifdef DEBUG_SERIAL_USART2
 #define UART_DMA_CHANNEL DMA1_Channel7
-extern UART_HandleTypeDef huart2;
 #endif
 
 
-char uart_buf[100];
+volatile uint8_t uart_buf[100];
 volatile int16_t ch_buf[8];
 
-int debug_out = 1;
-int enablescope = 1;
+#if defined(SERIAL_USART2_IT)
+  volatile SERIAL_USART_BUFFER usart2_it_TXbuffer;
+  volatile SERIAL_USART_BUFFER usart2_it_RXbuffer;
+#endif
+#if defined(SERIAL_USART3_IT)
+  volatile SERIAL_USART_BUFFER usart3_it_TXbuffer;
+  volatile SERIAL_USART_BUFFER usart3_it_RXbuffer;
+#endif
+
+uint8_t debug_out = 1;
+uint8_t enablescope = 1;
 
 //volatile char char_buf[300];
 

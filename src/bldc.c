@@ -4,6 +4,7 @@
 #include "setup.h"
 #include "config.h"
 #include "bldc.h"
+#include "hallinterrupts.h"
 
 volatile ELECTRICAL_PARAMS electrical_measurements;
 

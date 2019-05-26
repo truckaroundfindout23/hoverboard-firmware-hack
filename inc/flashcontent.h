@@ -28,9 +28,11 @@
 // to write to it, use protocol to write to magic, this will commit content to flash
 
 // decimal to make it easier to type!
+#pragma once
+
 #define CURRENT_MAGIC 1234
 
-#pragma pack(push, 2)
+#pragma pack(push, 2) // all variables of type unsigned short (2 bytes)
 typedef struct tag_FLASH_CONTENT{
     unsigned short magic;  // write this with CURRENT_MAGIC to commit to flash
 
@@ -47,18 +49,21 @@ typedef struct tag_FLASH_CONTENT{
     unsigned short MaxCurrLim;
 
     unsigned short HoverboardEnable; // non zero to enable
+    unsigned short calibration_0;
+    unsigned short calibration_1;
+    unsigned short HoverboardPWMLimit;
 
 } FLASH_CONTENT;
 #pragma pack(pop)
 
-FLASH_CONTENT FlashContent;
+extern FLASH_CONTENT FlashContent;
 
-const FLASH_CONTENT FlashDefaults;
+extern const FLASH_CONTENT FlashDefaults;
 
 #ifndef FLASH_DEFAULT_HOVERBOARD_ENABLE
 #define FLASH_DEFAULT_HOVERBOARD_ENABLE 0
 #endif
 
-//#define FLASH_DEFAULTS { CURRENT_MAGIC,    50, 50, 0, 200,    20, 10, 0, 10,    1500,   FLASH_DEFAULT_HOVERBOARD_ENABLE }
-#define FLASH_DEFAULTS { CURRENT_MAGIC, 300, 50, 0, 400,    20, 10, 0, 10,    200,   FLASH_DEFAULT_HOVERBOARD_ENABLE } // https://github.com/btsimonh/hoverboard-firmware-hack/pull/16
+#define FLASH_DEFAULTS { CURRENT_MAGIC,    50, 50, 0, 1000,    20, 10, 0, 20,    1500,   FLASH_DEFAULT_HOVERBOARD_ENABLE, 0, 0, 1000 }
+//#define FLASH_DEFAULTS { CURRENT_MAGIC, 300, 50, 0, 400,    20, 10, 0, 10,    200,   FLASH_DEFAULT_HOVERBOARD_ENABLE } // https://github.com/btsimonh/hoverboard-firmware-hack/pull/16
 //#define FLASH_DEFAULTS { CURRENT_MAGIC, 500, 50, 15, 150,    20, 10, 0, 10,    200,   FLASH_DEFAULT_HOVERBOARD_ENABLE } // https://github.com/btsimonh/hoverboard-firmware-hack/pull/16

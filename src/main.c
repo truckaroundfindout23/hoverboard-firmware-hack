@@ -55,25 +55,31 @@ bool SoftWatchdogActive= false;
 typedef struct{
    int16_t steer;
    int16_t speed;
-#ifdef CONTROL_SERIAL_NAIVE_CRC
+ #ifdef CONTROL_SERIAL_NAIVE_CRC
    uint32_t crc;
 #endif
 } Serialcommand;
+int hbscale[2] = {15, 15};
 
 volatile Serialcommand command;
 
-int disablepoweroff = 0;
+#ifdef READ_SENSOR
+SENSOR_DATA last_sensor_data[2];
+int sensor_control = 0;
+int sensor_stabilise = 0;
+
+#endif
+uint8_t disablepoweroff = 0;
 int powerofftimer = 0;
+
+
+extern volatile unsigned int timerval;
+extern volatile unsigned int ssbits;
 
 uint8_t button1, button2, button1_ADC, button2_ADC;
 
 int steer; // global variable for steering. -1000 to 1000
 int speed; // global variable for speed. -1000 to 1000
-
-int pwms[2] = {0, 0};
-
-int dirs[2] = {-1, 1};
-int dspeeds[2] = {0,0};
 
 extern volatile int pwml;  // global variable for pwm left. -1000 to 1000
 extern volatile int pwmr;  // global variable for pwm right. -1000 to 1000
@@ -90,6 +96,7 @@ extern volatile uint32_t timeout; // global variable for timeout
 extern float batteryVoltage; // global variable for battery voltage
 
 uint32_t inactivity_timeout_counter;
+uint32_t debug_counter = 0;
 
 extern uint8_t nunchuck_data[6];
 #ifdef CONTROL_PPM
@@ -99,12 +106,21 @@ extern volatile uint16_t ppm_captured_value[PPM_NUM_CHANNELS+1];
 int milli_vel_error_sum = 0;
 
 
+typedef struct tag_power_button_info {
+  int startup_button_held;      // indicates power button was active at startup
+  int button_prev;              // last value of power button
+  unsigned int button_held_ms;  // ms for which the button has been held down
+} POWER_BUTTON_INFO;
+void check_power_button();
+
+POWER_BUTTON_INFO power_button_info;
+
 void poweroff() {
   enable = 0;    // disable Motors
-  if (ABS(speed) < 20) {
-    buzzerPattern = 0;
-    for (int i = 0; i < 8; i++) {
-      buzzerFreq = i;
+      if (ABS(speed) < 20) {
+        buzzerPattern = 0;
+        for (int i = 0; i < 8; i++) {
+            buzzerFreq = i;
 
 #ifdef SOFTWATCHDOG_TIMEOUT
       for(int j = 0; j < 50; j++) {
@@ -113,16 +129,22 @@ void poweroff() {
       }
     }
 #else
-      HAL_Delay(100);
-    }
+            HAL_Delay(100);
+        }
 #endif
 
     HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, 0); // shutdown  power
     while(1) {}
   } else {
     powerofftimer = 1000;
-  }
+    }
 }
+
+// actually 'power'
+int pwms[2] = {0, 0};
+
+int dirs[2] = {-1, 1};
+int dspeeds[2] = {0,0};
 
 #ifdef CONTROL_SERIAL_NAIVE_CRC
 bool checkCRC(Serialcommand* command) {
@@ -140,6 +162,7 @@ bool checkCRC(Serialcommand* command) {
 }
 #endif
 
+#ifdef FLASH_STORAGE
 /////////////////////////////////////////
 // variables stored in flash
 // from flashcontent.h
@@ -212,7 +235,6 @@ void change_PID_constants(){
   }
 }
 
-#ifdef FLASH_STORAGE
 void init_flash_content(){
   FLASH_CONTENT FlashRead;
   int len = readFlash( (unsigned char *)&FlashRead, sizeof(FlashRead) );
@@ -225,6 +247,7 @@ void init_flash_content(){
   memcpy(&FlashContent, &FlashRead, sizeof(FlashContent));
 }
 #endif
+
 
 int main(void) {
   HAL_Init();
@@ -269,7 +292,9 @@ int main(void) {
   #ifdef SERIAL_USART3_IT
   USART3_IT_init();
   #endif
-
+  #ifdef SOFTWARE_SERIAL
+  SoftwareSerialInit();
+  #endif
 
 #ifdef FLASH_STORAGE
   init_flash_content();
@@ -277,11 +302,17 @@ int main(void) {
   init_PID_control();
 #endif
 
+  #ifdef READ_SENSOR
+  // initialise to 9 bit interrupt driven comms on USART 2 & 3
+  sensor_init();
+  #endif
+
+#ifdef FLASH_STORAGE
   if (0 == FlashContent.MaxCurrLim) {
     FlashContent.MaxCurrLim = DC_CUR_LIMIT*100;
   }
   electrical_measurements.dcCurLim = MIN(DC_CUR_LIMIT, FlashContent.MaxCurrLim / 100);
-
+#endif
 
   for (int i = 8; i >= 0; i--) {
     buzzerFreq = i;
@@ -294,6 +325,11 @@ int main(void) {
   int lastSpeedL = 0, lastSpeedR = 0;
   int speedL = 0, speedR = 0;
 
+  #ifdef READ_SENSOR
+  // things we use in main loop for sensor control
+  consoleLog("power on\n");
+
+  #endif
   #ifdef HALL_INTERRUPTS
     // enables interrupt reading of hall sensors for dead reconing wheel position.
     HallInterruptinit();
@@ -315,6 +351,20 @@ int main(void) {
   #if defined(DEBUG_SERIAL_USART3) || defined(CONTROL_SERIAL_NAIVE_USART3)
     UART3_Init();
   #endif
+
+    #ifdef SOFTWARE_SERIAL
+
+      PROTOCOL_STAT sSoftwareSerial;
+
+      if(protocol_init(&sSoftwareSerial) != 0) consoleLog("Protocol Init failed\r\n");
+
+      sSoftwareSerial.send_serial_data=softwareserial_Send;
+      sSoftwareSerial.send_serial_data_wait=softwareserial_Send_Wait;
+      sSoftwareSerial.timeout1 = 500;
+      sSoftwareSerial.timeout2 = 100;
+      sSoftwareSerial.allow_ascii = 1;
+
+    #endif
 
   #ifdef CONTROL_SERIAL_NAIVE_USART2
     HAL_UART_Receive_DMA(&huart2, (uint8_t *)&command, sizeof(command));
@@ -382,15 +432,40 @@ int main(void) {
   SoftWatchdogActive= true;
 #endif
 
+  // ####### POWER-BUTTON startup conditions #######
+  power_button_info.startup_button_held = HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN);
+  power_button_info.button_prev = power_button_info.startup_button_held;
+  power_button_info.button_held_ms = 0;
 
+  if (power_button_info.startup_button_held) {
+    consoleLog("Power button down at startup\r\n");
+  } else {
+    consoleLog("Power button up at startup\r\n");
+  }
+
+  timeStats.now_us = HallGetuS();
+  timeStats.nominal_delay_us = (DELAY_IN_MAIN_LOOP * 1000);
+  timeStats.start_processing_us = timeStats.now_us + timeStats.nominal_delay_us;
 
   while(1) {
+    timeStats.time_in_us = timeStats.now_us;
 
-    #if (INCLUDE_PROTOCOL == INCLUDE_PROTOCOL2)
+    if (timeStats.start_processing_us < timeStats.now_us) {
+      timeStats.us_lost += timeStats.now_us - timeStats.start_processing_us;
+      timeStats.main_late_count++;
+      timeStats.start_processing_us = timeStats.now_us + 1000;  // at least 1ms of delay
+    }
+
+    // delay until we should start processing
+    while (timeStats.now_us < timeStats.start_processing_us){
+      #if (INCLUDE_PROTOCOL == INCLUDE_PROTOCOL2)
       if(!enable_immediate) timeout++;
-      unsigned long start = HAL_GetTick();
-
-      while (HAL_GetTick() < start + DELAY_IN_MAIN_LOOP){
+        #ifdef SOFTWARE_SERIAL
+          while ( softwareserial_available() > 0 ) {
+            protocol_byte( &sSoftwareSerial, (unsigned char) softwareserial_getrx() );
+          }
+          protocol_tick( &sSoftwareSerial );
+        #endif
 
         #if defined(SERIAL_USART2_IT) && !defined(READ_SENSOR)
           while ( serial_usart_buffer_count(&usart2_it_RXbuffer) > 0 ) {
@@ -405,15 +480,15 @@ int main(void) {
           }
           protocol_tick( &sUSART3 );
         #endif
+      #else
+        timeout++;
+      #endif
+      timeStats.now_us = HallGetuS();
+    }
 
-      }
+    // move out '5ms' trigger on by 5ms
+    timeStats.processing_in_us = timeStats.now_us;
 
-    #else // if no bytes to read, just do a delay
-
-      timeout++;
-      HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
-
-    #endif
 
 
     #ifdef CONTROL_NUNCHUCK
@@ -434,6 +509,7 @@ int main(void) {
 
     #ifdef CONTROL_ADC
       // ADC values range: 0-4095, see ADC-calibration in config.h
+
 
       #ifdef ADC_SWITCH_CHANNELS
 
@@ -517,85 +593,88 @@ int main(void) {
 
 
 #if defined(INCLUDE_PROTOCOL)
-
-    if ((last_control_type != control_type) || (!enable)){
-      // nasty things happen if it's not re-initialised
-      init_PID_control();
-      last_control_type = control_type;
+          if ((last_control_type != control_type) || (!enable)){
+  #ifdef FLASH_STORAGE
+            // nasty things happen if it's not re-initialised
+            init_PID_control();
+            last_control_type = control_type;
+  #endif
     }
 
-    switch (control_type){
-      case CONTROL_TYPE_POSITION:
-        for (int i = 0; i < 2; i++){
-          if (pid_need_compute(&PositionPid[i])) {
-            // Read process feedback
-  #ifdef HALL_INTERRUPTS
-            PositionPidFloats[i].set = PosnData.wanted_posn_mm[i];
-            PositionPidFloats[i].in = HallData[i].HallPosn_mm;
-  #endif
-            // Compute new PID output value
-            pid_compute(&PositionPid[i]);
-            //Change actuator value
-            int pwm = PositionPidFloats[i].out;
-            pwms[i] = pwm;
-            #ifdef LOG_PWM
-              if (i == 0){
-                sprintf(tmp, "%d:%d\r\n", i, pwm);
-                consoleLog(tmp);
+          switch (control_type){
+  #ifdef FLASH_STORAGE
+            case CONTROL_TYPE_POSITION:
+              for (int i = 0; i < 2; i++){
+                if (pid_need_compute(&PositionPid[i])) {
+                  // Read process feedback
+#ifdef HALL_INTERRUPTS
+                  PositionPidFloats[i].set = PosnData.wanted_posn_mm[i];
+                  PositionPidFloats[i].in = HallData[i].HallPosn_mm;
+#endif
+                  // Compute new PID output value
+                  pid_compute(&PositionPid[i]);
+                  //Change actuator value
+                  int pwm = PositionPidFloats[i].out;
+                  pwms[i] = pwm;
+                  #ifdef LOG_PWM
+                    if (i == 0){
+                      sprintf(tmp, "%d:%d\r\n", i, pwm);
+                      consoleLog(tmp);
+                    }
+                  #endif
+                }
               }
-            #endif
-          }
-        }
-        break;
-      case CONTROL_TYPE_SPEED:
-        for (int i = 0; i < 2; i++){
-          // average speed over all the loops until pid_need_compute() returns !=0
-  #ifdef HALL_INTERRUPTS
-          SpeedPidFloats[i].in += HallData[i].HallSpeed_mm_per_s;
+              break;
+            case CONTROL_TYPE_SPEED:
+              for (int i = 0; i < 2; i++){
+                // average speed over all the loops until pid_need_compute() returns !=0
+#ifdef HALL_INTERRUPTS
+                SpeedPidFloats[i].in += HallData[i].HallSpeed_mm_per_s;
+#endif
+                SpeedPidFloats[i].count++;
+                if (!enable){ // don't want anything building up
+                  SpeedPidFloats[i].in = 0;
+                  SpeedPidFloats[i].count = 1;
+                }
+                if (pid_need_compute(&SpeedPid[i])) {
+                  // Read process feedback
+                  int belowmin = 0;
+                  // won't work below about 45
+                  if (ABS(SpeedData.wanted_speed_mm_per_sec[i]) < SpeedData.speed_minimum_speed){
+                    SpeedPidFloats[i].set = 0;
+                    belowmin = 1;
+                  } else {
+                    SpeedPidFloats[i].set = SpeedData.wanted_speed_mm_per_sec[i];
+                  }
+                  SpeedPidFloats[i].in = SpeedPidFloats[i].in/(float)SpeedPidFloats[i].count;
+                  SpeedPidFloats[i].count = 0;
+                  // Compute new PID output value
+                  pid_compute(&SpeedPid[i]);
+                  //Change actuator value
+                  int pwm = SpeedPidFloats[i].out;
+                  if (belowmin){
+                    pwms[i] = 0;
+                  } else {
+                    pwms[i] =
+                      CLAMP(pwms[i] + pwm, -SpeedData.speed_max_power, SpeedData.speed_max_power);
+                  }
+                  #ifdef LOG_PWM
+                  if (i == 0){
+                    sprintf(tmp, "%d:%d(%d) S:%d H:%d\r\n", i, pwms[i], pwm, (int)SpeedPidFloats[i].set, (int)SpeedPidFloats[i].in);
+                    consoleLog(tmp);
+                  }
+                  #endif
+                }
+              }
+              break;
   #endif
-          SpeedPidFloats[i].count++;
-          if (!enable){ // don't want anything building up
-            SpeedPidFloats[i].in = 0;
-            SpeedPidFloats[i].count = 1;
-          }
-          if (pid_need_compute(&SpeedPid[i])) {
-            // Read process feedback
-            int belowmin = 0;
-            // won't work below about 45
-            if (ABS(SpeedData.wanted_speed_mm_per_sec[i]) < SpeedData.speed_minimum_speed){
-              SpeedPidFloats[i].set = 0;
-              belowmin = 1;
-            } else {
-              SpeedPidFloats[i].set = SpeedData.wanted_speed_mm_per_sec[i];
-            }
-            SpeedPidFloats[i].in = SpeedPidFloats[i].in/(float)SpeedPidFloats[i].count;
-            SpeedPidFloats[i].count = 0;
-            // Compute new PID output value
-            pid_compute(&SpeedPid[i]);
-            //Change actuator value
-            int pwm = SpeedPidFloats[i].out;
-            if (belowmin){
-              pwms[i] = 0;
-            } else {
-              pwms[i] =
-                CLAMP(pwms[i] + pwm, -SpeedData.speed_max_power, SpeedData.speed_max_power);
-            }
-            #ifdef LOG_PWM
-            if (i == 0){
-              sprintf(tmp, "%d:%d(%d) S:%d H:%d\r\n", i, pwms[i], pwm, (int)SpeedPidFloats[i].set, (int)SpeedPidFloats[i].in);
-              consoleLog(tmp);
-            }
-            #endif
-          }
-        }
-        break;
 
-      case CONTROL_TYPE_PWM:
-        for (int i = 0; i < 2; i++){
-          pwms[i] = PWMData.pwm[i];
-        }
-        break;
-    }
+            case CONTROL_TYPE_PWM:
+              for (int i = 0; i < 2; i++){
+                pwms[i] = PWMData.pwm[i];
+              }
+              break;
+          }
 #endif
 
 
@@ -607,13 +686,18 @@ int main(void) {
         timeout = 0;
       }
     #endif
+    #ifdef READ_SENSOR
+      // send twice to make sure each side gets it.
+      // if we sent diagnositc data, it seems to need this.
+      sensor_send_lights();
+    #endif
 
-    // ####### LOW-PASS FILTER #######
-    steer = steer * (1.0 - FILTER) + cmd1 * FILTER;
-    speed = speed * (1.0 - FILTER) + cmd2 * FILTER;
+      // ####### LOW-PASS FILTER #######
+      steer = steer * (1.0 - FILTER) + cmd1 * FILTER;
+      speed = speed * (1.0 - FILTER) + cmd2 * FILTER;
 
 
-    // ####### MIXER #######
+      // ####### MIXER #######
     #ifdef SWITCH_WHEELS
       speedL = CLAMP(speed * SPEED_COEFFICIENT -  steer * STEER_COEFFICIENT, -1000, 1000);
       speedR = CLAMP(speed * SPEED_COEFFICIENT +  steer * STEER_COEFFICIENT, -1000, 1000);
@@ -676,6 +760,12 @@ int main(void) {
         setScopeChannel(0, (int)adc_buffer.l_tx2);  // 1: ADC1
         setScopeChannel(1, (int)adc_buffer.l_rx2);  // 2: ADC2
       #endif
+
+      #ifdef CONTROL_SENSOR
+        setScopeChannel(0, (int)sensor_data[0].complete.Angle);  // 1: ADC1
+        setScopeChannel(1, -(int)sensor_data[1].complete.Angle);  // 2: ADC2
+      #endif
+
       setScopeChannel(2, (int)speedR);  // 3: output speed: 0-1000
       setScopeChannel(3, (int)speedL);  // 4: output speed: 0-1000
       setScopeChannel(4, (int)adc_buffer.batt1);  // 5: for battery voltage calibration
@@ -686,18 +776,9 @@ int main(void) {
     }
 
 
-      // ####### POWEROFF BY POWER-BUTTON #######
-      if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN) && weakr == 0 && weakl == 0) {
-        enable = 0;
-        int i = 0;
-        while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {    // wait, till the power button is released. Otherwise cutting power does nothing
-#ifdef SOFTWATCHDOG_TIMEOUT
-          __HAL_TIM_SET_COUNTER(&htim3, 0); // Kick the Watchdog
-          HAL_Delay(i++/2);                 // The watchdog will get you eventually..
-#endif
-        }
-        poweroff();
-      }
+    // does things if power button is pressed, held.
+    check_power_button();
+
 
     // if we plug in the charger, keep us alive
     // also if we have deliberately turned off poweroff over serial
@@ -708,8 +789,10 @@ int main(void) {
 
     // ####### BEEP AND EMERGENCY POWEROFF #######
     if (TEMP_POWEROFF_ENABLE && board_temp_deg_c >= TEMP_POWEROFF && ABS(speed) < 20) {  // poweroff before mainboard burns
+      consoleLog("power off by temp\r\n");
       poweroff();
     } else if (batteryVoltage < ((float)BAT_LOW_DEAD * (float)BAT_NUMBER_OF_CELLS) && ABS(speed) < 20) {  // poweroff low bat 3
+      consoleLog("power off by low voltage\r\n");
       poweroff();
     } else if (TEMP_WARNING_ENABLE && board_temp_deg_c >= TEMP_WARNING) {  // beep if mainboard gets hot
       buzzerFreq = 4;
@@ -759,7 +842,8 @@ int main(void) {
     // power off after ~60s of inactivity
     if (inactivity_timeout_counter > (INACTIVITY_TIMEOUT * 60 * 1000) / (DELAY_IN_MAIN_LOOP + 1)) {  // rest of main loop needs maybe 1ms
           inactivity_timeout_counter = 0;
-        poweroff();
+      consoleLog("power off by 60s inactivity\r\n");
+      poweroff();
     }
 
 
@@ -787,6 +871,7 @@ int main(void) {
 
       if (powerofftimer <= 0){
         powerofftimer = 0;
+        consoleLog("power off by timer\r\n");
         poweroff();
       }
     }
@@ -794,8 +879,168 @@ int main(void) {
 #ifdef SOFTWATCHDOG_TIMEOUT
     __HAL_TIM_SET_COUNTER(&htim3, 0); // Kick the Watchdog
 #endif
+
+    ////////////////////////////////
+    // take stats
+    timeStats.now_us = HallGetuS();
+
+    timeStats.main_interval_us = timeStats.now_us - timeStats.time_in_us;
+    timeStats.main_delay_us = timeStats.processing_in_us - timeStats.time_in_us;
+    timeStats.main_processing_us = timeStats.now_us - timeStats.processing_in_us;
+    // maybe average main_dur as a stat?
+    if (timeStats.main_interval_ms == 0){
+      timeStats.main_interval_ms = ((float)timeStats.main_interval_us)/1000;
+      timeStats.main_processing_ms = ((float)timeStats.main_processing_us)/1000.0;
+    }
+    timeStats.main_interval_ms = timeStats.main_interval_ms * 0.99;
+    timeStats.main_interval_ms = timeStats.main_interval_ms + (((float)timeStats.main_interval_us)/1000.0)*0.01;
+
+    timeStats.main_processing_ms = timeStats.main_processing_ms * 0.99;
+    timeStats.main_processing_ms = timeStats.main_processing_ms + (((float)timeStats.main_processing_us)/1000.0)*0.01;
+
+    // select next loop start point
+    // move out '5ms' trigger on by 5ms
+    timeStats.start_processing_us = timeStats.start_processing_us + timeStats.nominal_delay_us;
   }
 }
+
+
+//////////////////////////////////////////////////////
+// check and do things when we press the power button
+void check_power_button(){
+
+  // if power button is currently down
+  if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {
+    // increment how long it has been down for.
+    power_button_info.button_held_ms += DELAY_IN_MAIN_LOOP;
+
+    // if power button was down at start
+    if (power_button_info.startup_button_held) {
+      if (power_button_info.button_held_ms > 5000)
+      {
+        // provisional startup mode - do something if button held for 5s at startup
+      }
+    } else {
+
+      // if we have seen the state released since startup
+      if (power_button_info.button_prev == 0){
+        power_button_info.button_prev = 1;
+        // reset the time pressed to zero
+        power_button_info.button_held_ms = 0;
+      } else {
+        // button remains pressed
+        // indicate how long it has been pressed by colour
+        if ((power_button_info.button_held_ms > 100) &&
+            (power_button_info.button_held_ms < 2000) )
+        {
+        #if defined CONTROL_SENSOR
+          // indicate with 1 flash that this would power off
+          sensor_set_flash(0, 1);
+          sensor_set_flash(1, 1);
+        #endif
+        }
+        if ((power_button_info.button_held_ms >= 2000) &&
+            (power_button_info.button_held_ms < 5000) )
+        {
+        #if defined CONTROL_SENSOR
+          // indicate with 2 flashes that we would not power off, and not calibrate
+          sensor_set_flash(0, 2);
+          sensor_set_flash(1, 2);
+        #endif
+        }
+        if ((power_button_info.button_held_ms > 5000) &&
+            (power_button_info.button_held_ms < 10000) )
+        {
+        #if defined CONTROL_SENSOR
+          // indicate with 3 flashes that we would calibrate
+          sensor_set_flash(0, 3);
+          sensor_set_flash(1, 3);
+        #endif
+        }
+        if ((power_button_info.button_held_ms > 10000) &&
+            (power_button_info.button_held_ms < 100000) )
+        {
+        #if defined CONTROL_SENSOR
+          // indicate with 4 flashes that we would NOT calibrate
+          sensor_set_flash(0, 4);
+          sensor_set_flash(1, 4);
+        #endif
+        }
+      }
+    }
+  } else {
+
+    // ONLY take action if the startup button was NOT down when we started up, or has been released since
+    if (!power_button_info.startup_button_held) {
+      // if this is a button release
+      if (power_button_info.button_prev) {
+        // power button held for < 100ms or > 10s -> nothing
+        if ((power_button_info.button_held_ms >= 10000) || (power_button_info.button_held_ms < 100))
+        {
+          // no action taken
+        }
+
+        // power button held for between 5s and 10s -> HB angle calibration
+        // (only if it had been released since startup)
+        if ((power_button_info.button_held_ms >= 5000) &&
+            (power_button_info.button_held_ms < 10000))
+        {
+          buzzerPattern = 0;
+          enable = 0;
+
+        #if defined CONTROL_SENSOR
+          // indicate we accepted calibrate command
+          sensor_set_flash(0, 8);
+          sensor_set_flash(1, 8);
+        #endif
+
+          // buz to indicate we are calibrating
+          for (int i = 0; i < 20; i++) {
+            buzzerFreq = i & 2;
+            HAL_Delay(100);
+          }
+
+        #if defined CONTROL_SENSOR && defined FLASH_STORAGE
+          // read current board angles, and save to flash as center
+          FlashContent.calibration_0 = sensor_data[0].Center_calibration = sensor_data[0].complete.Angle;
+          FlashContent.calibration_1 = sensor_data[1].Center_calibration = sensor_data[1].complete.Angle;
+          writeFlash( (unsigned char *)&FlashContent, sizeof(FlashContent) );
+          consoleLog("*** Write Flash Calibration data\r\n");
+        #else
+          consoleLog("*** Not a hoverboard, no calibrarion done\r\n");
+        #endif
+
+        }
+
+        // power button held for >100ms < 2s -> power off
+        // (only if it had been released since startup)
+        if ((power_button_info.button_held_ms >= 100) &&
+            (power_button_info.button_held_ms < 2000) &&
+            weakr == 0 &&
+            weakl == 0) {
+          enable = 0;
+          //while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN));
+          consoleLog("power off by button\r\n");
+          poweroff();
+        }
+
+        // always stop flash after done/released regardless
+      #if defined CONTROL_SENSOR
+        sensor_set_flash(0, 0);
+        sensor_set_flash(1, 0);
+      #endif
+
+      } // end of if power button was previous down
+    }
+
+    // always mark the button as released
+    power_button_info.button_held_ms = 0;
+    power_button_info.button_prev = 0;
+    power_button_info.startup_button_held = 0;
+  } // end of else power button must be up
+}
+
+
 
 /** System Clock Configuration
 */
