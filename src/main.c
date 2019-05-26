@@ -385,10 +385,9 @@ int main(void) {
 
 
   while(1) {
-    timeout++;
 
     #if (INCLUDE_PROTOCOL == INCLUDE_PROTOCOL2)
-
+      if(!enable_immediate) timeout++;
       unsigned long start = HAL_GetTick();
 
       while (HAL_GetTick() < start + DELAY_IN_MAIN_LOOP){
@@ -411,6 +410,7 @@ int main(void) {
 
     #else // if no bytes to read, just do a delay
 
+      timeout++;
       HAL_Delay(DELAY_IN_MAIN_LOOP); //delay in ms
 
     #endif

@@ -254,10 +254,6 @@
   #endif
 #endif
 
-#if defined(SERIAL_USART2_IT) && defined(SERIAL_USART3_IT)
-  #error SERIAL_USART2_IT and SERIAL_USART3_IT not allowed together.
-#endif
-
 #if defined(CONTROL_SERIAL_PROTOCOL) && !(defined(SERIAL_USART2_IT) || defined(SERIAL_USART3_IT))
   #error Either SERIAL_USART2_IT or SERIAL_USART3_IT has to be selected when using CONTROL_SERIAL_PROTOCOL.
 #endif

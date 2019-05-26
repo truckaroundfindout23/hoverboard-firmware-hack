@@ -16,14 +16,36 @@
 * You should have received a copy of the GNU General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#ifndef HALLINTERRUPTS_H
-#define HALLINTERRUPTS_H
+#pragma once
 
 #include "config.h"
 
 #ifdef HALL_INTERRUPTS
 
 #include "defines.h"
+
+typedef struct tag_time_stats {
+    // times
+    long long now_us;
+    long long start_processing_us;
+    long long processing_in_us;
+    long long main_interval_us;
+    long long time_in_us;
+    long long main_delay_us;
+    long long main_processing_us;
+
+    long long nominal_delay_us;
+
+    // stats
+    long long us_lost;
+    unsigned int main_late_count;
+
+    float main_interval_ms;
+    float main_processing_ms;
+
+} TIME_STATS;
+
+extern TIME_STATS timeStats;
 
 #define HALL_PIN_MASK (LEFT_HALL_U_PIN | LEFT_HALL_V_PIN | LEFT_HALL_W_PIN | RIGHT_HALL_U_PIN | RIGHT_HALL_V_PIN | RIGHT_HALL_W_PIN)
 
@@ -39,7 +61,7 @@
 //////////////////////////////////////////////////////////////
 // this is the Hall data we gather, and can be read elsewhere
 // one for each wheel
-#pragma pack(push, 1)
+#pragma pack(push, 4)  // long and float are 4 byte each
 typedef struct tag_HALL_DATA_STRUCT{
     long HallPosn; // 90 per revolution
     long HallSpeed; // speed part calibrated to speed demand value
@@ -56,7 +78,7 @@ typedef struct tag_HALL_DATA_STRUCT{
 } HALL_DATA_STRUCT;
 #pragma pack(pop)
 
-volatile HALL_DATA_STRUCT HallData[2];
+extern volatile HALL_DATA_STRUCT HallData[2];
 
 
 ////////////////////////////////////////////////////////////////////////////
@@ -67,7 +89,7 @@ void HallInterruptinit(void);
 void HallInterruptSetWheelDiameterInches(float inches);
 void HallInterruptSetWheelDiameterMM(float mm);
 void HallInterruptReset();
-
+long long HallGetuS(); // returns micro seconds (10 x the timer it is based on.....)
 
 // interrupt routine
 void HallInterruptsInterrupt(void);
@@ -77,7 +99,7 @@ void HallInterruptsInterrupt(void);
 // it may be useful to read the current position and zero it at the same time
 // this function provides this as an option, as well as getting a single
 // snapshot with interrupts disabled
-#pragma pack(push, 1)
+#pragma pack(push, 4)  // int and long are both 4 byte
 typedef struct tag_HALL_POSN {
     struct {
         int HallPosn; // 90 per revolution
@@ -91,7 +113,7 @@ typedef struct tag_HALL_POSN {
 
 void HallInterruptReadPosn( HALL_POSN *p, int Reset );
 
-#pragma pack(push, 1)
+#pragma pack(push, 1)  // struct is a mix of many different types with varying size
 typedef struct tag_HALL_PARAMS{
     uint8_t hall_u;
     uint8_t hall_v;
@@ -117,12 +139,10 @@ typedef struct tag_HALL_PARAMS{
 } HALL_PARAMS;
 #pragma pack(pop)
 
-volatile HALL_DATA_STRUCT HallData[2];
-TIM_HandleTypeDef h_timer_hall;
-volatile HALL_PARAMS local_hall_params[2];
-volatile long long timerwraps;
+extern volatile HALL_DATA_STRUCT HallData[2];
+extern TIM_HandleTypeDef h_timer_hall;
+extern volatile HALL_PARAMS local_hall_params[2];
+extern volatile long long timerwraps;
 
-
-#endif
 
 #endif
